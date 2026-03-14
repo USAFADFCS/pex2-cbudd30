@@ -170,9 +170,6 @@ void* NPPcpu(void* param) {
             // Lock readyQ before inspecting or modifying it — another CPU
             pthread_mutex_lock(&(svars->readyQLock));
 
-            // Index 0 = head of the list = the process that has been waiting
-            // the longest (qInsert always appends to the tail, so the head is
-            // always the oldest arrival — that is the FIFO selection rule).
             int x = qPriority(&(svars->readyQ));
             p = qRemove(&(svars->readyQ), x);
 
@@ -185,7 +182,7 @@ void* NPPcpu(void* param) {
 
             pthread_mutex_unlock(&(svars->readyQLock));
         }
-        
+
         if (p != NULL) {
             p->burstRemaining--;
 
@@ -215,14 +212,63 @@ void* RRcpu(void* param) {
     int threadNum = ((CpuParams*) param)->threadNumber;
     SharedVars* svars = ((CpuParams*) param)->svars;
 
-    // Process* p = NULL;  // TODO: uncomment when you implement this function
+    Process* p = NULL;  // TODO: uncomment when you implement this function
+
+    
 
     while (1) {
         sem_wait(svars->cpuSems[threadNum]);
+        
+        if (p == NULL) {
+            // Lock readyQ before inspecting or modifying it — another CPU
+            pthread_mutex_lock(&(svars->readyQLock));
+
+            
+            p = qRemove(&(svars->readyQ), 0);
+            
+            if (p == NULL) {
+                // readyQ was empty — CPU stays idle this tick.
+                printf("No process to schedule\n");
+            } else {
+                printf("Scheduling PID %d\n", p->PID);
+            }
+            
+
+            pthread_mutex_unlock(&(svars->readyQLock));
+        }
+
+        if (p != NULL) {
+            int count = 0;
+            while(count < svars->quantum){
+            p->burstRemaining--;
+
+            if (p->burstRemaining <= 0) {
+                // Process is done — move it to finishedQ so main can
+                // compute and print wait-time statistics at simulation end.
+                pthread_mutex_lock(&(svars->finishedQLock));
+                qInsert(&(svars->finishedQ), p);
+                pthread_mutex_unlock(&(svars->finishedQLock));
+
+                // CPU is now idle; it will select a new process next tick.
+            } else{
+                pthread_mutex_lock(&(svars->readyQLock));
+                p->requeued = true;
+                qInsert(&(svars->readyQ), p);
+                pthread_mutex_unlock(&(svars->readyQLock));
+
+            }
+            count ++;
+
+        }
+        p = NULL;
+        count =0;
+        
+        }
 
         sem_post(svars->mainSem);
     }
 }
+
 
 // ============================================================
 // SRTF — Shortest Remaining Time First (preemptive)
@@ -233,10 +279,52 @@ void* SRTFcpu(void* param) {
     int threadNum = ((CpuParams*) param)->threadNumber;
     SharedVars* svars = ((CpuParams*) param)->svars;
 
-    // Process* p = NULL;  // TODO: uncomment when you implement this function
+    Process* p = NULL;  // TODO: uncomment when you implement this function
 
     while (1) {
         sem_wait(svars->cpuSems[threadNum]);
+
+        if (p == NULL) {
+            // Lock readyQ before inspecting or modifying it — another CPU
+            pthread_mutex_lock(&(svars->readyQLock));
+
+            // Index 0 = head of the list = the process that has been waiting
+            // the longest (qInsert always appends to the tail, so the head is
+            // always the oldest arrival — that is the FIFO selection rule).
+            int x = qShortestBR(&(svars->readyQ));
+            p = qRemove(&(svars->readyQ), x);
+
+            if (p == NULL) {
+                // readyQ was empty — CPU stays idle this tick.
+                printf("No process to schedule\n");
+            } else {
+                printf("Scheduling PID %d\n", p->PID);
+            }
+
+            pthread_mutex_unlock(&(svars->readyQLock));
+        }
+
+        if (p != NULL) {
+            p->burstRemaining--;
+
+            if (p->burstRemaining == 0) {
+                // Process is done — move it to finishedQ so main can
+                // compute and print wait-time statistics at simulation end.
+                pthread_mutex_lock(&(svars->finishedQLock));
+                qInsert(&(svars->finishedQ), p);
+                pthread_mutex_unlock(&(svars->finishedQLock));
+
+                // CPU is now idle; it will select a new process next tick.
+                p = NULL;
+            } else{
+                pthread_mutex_lock(&(svars->readyQLock));
+                p->requeued = true;
+                qInsert(&(svars->readyQ), p);
+                pthread_mutex_unlock(&(svars->readyQLock));
+
+            }
+        }
+
 
         sem_post(svars->mainSem);
     }
@@ -251,11 +339,52 @@ void* PPcpu(void* param) {
     int threadNum = ((CpuParams*) param)->threadNumber;
     SharedVars* svars = ((CpuParams*) param)->svars;
 
-    // Process* p = NULL;  // TODO: uncomment when you implement this function
+    Process* p = NULL;  // TODO: uncomment when you implement this function
 
     while (1) {
         sem_wait(svars->cpuSems[threadNum]);
+        
+        if (p == NULL) {
+            // Lock readyQ before inspecting or modifying it — another CPU
+            pthread_mutex_lock(&(svars->readyQLock));
 
+            // Index 0 = head of the list = the process that has been waiting
+            // the longest (qInsert always appends to the tail, so the head is
+            // always the oldest arrival — that is the FIFO selection rule).
+            int x = qGetPriority(&(svars->readyQ));
+            p = qRemove(&(svars->readyQ), x);
+
+            if (p == NULL) {
+                // readyQ was empty — CPU stays idle this tick.
+                printf("No process to schedule\n");
+            } else {
+                printf("Scheduling PID %d\n", p->PID);
+            }
+
+            pthread_mutex_unlock(&(svars->readyQLock));
+        }
+
+        if (p != NULL) {
+            p->burstRemaining--;
+
+            if (p->burstRemaining == 0) {
+                // Process is done — move it to finishedQ so main can
+                // compute and print wait-time statistics at simulation end.
+                pthread_mutex_lock(&(svars->finishedQLock));
+                qInsert(&(svars->finishedQ), p);
+                pthread_mutex_unlock(&(svars->finishedQLock));
+
+                // CPU is now idle; it will select a new process next tick.
+                p = NULL;
+            } else{
+                pthread_mutex_lock(&(svars->readyQLock));
+                p->requeued = true;
+                qInsert(&(svars->readyQ), p);
+                pthread_mutex_unlock(&(svars->readyQLock));
+
+            }
+        }
+        
         sem_post(svars->mainSem);
     }
 }

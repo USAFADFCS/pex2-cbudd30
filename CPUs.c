@@ -221,8 +221,6 @@ void* RRcpu(void* param) {
         if (p == NULL) {
             // Lock readyQ before inspecting or modifying it — another CPU
             pthread_mutex_lock(&(svars->readyQLock));
-
-            
             p = qRemove(&(svars->readyQ), 0);
             
             if (p == NULL) {
@@ -238,24 +236,25 @@ void* RRcpu(void* param) {
 
         if (p != NULL) {
             int count = 0;
-            while(count < svars->quantum){
-            if (p->burstRemaining == 0) {
+            while(count < (svars->quantum)){
+            if (p->burstRemaining != 0) {
                 // Process is done — move it to finishedQ so main can
                 // compute and print wait-time statistics at simulation end.
-                pthread_mutex_lock(&(svars->finishedQLock));
-                qInsert(&(svars->finishedQ), p);
-                pthread_mutex_unlock(&(svars->finishedQLock));
-
-            } else{
                 p->burstRemaining--;
                 pthread_mutex_lock(&(svars->readyQLock));
                 p->requeued = true;
                 qInsert(&(svars->readyQ), p);
                 pthread_mutex_unlock(&(svars->readyQLock));
+                count ++;
+                
+            } else{
+                pthread_mutex_lock(&(svars->finishedQLock));
+                qInsert(&(svars->finishedQ), p);
+                pthread_mutex_unlock(&(svars->finishedQLock));
+                break;
 
             }
-            count ++;
-
+            
             }
             p = NULL;
             count =0;
@@ -282,31 +281,47 @@ void* SRTFcpu(void* param) {
     while (1) {
         sem_wait(svars->cpuSems[threadNum]);
 
-        pthread_mutex_lock(&(svars->readyQLock));
+        if (p == NULL) {
+            // Lock readyQ before inspecting or modifying it — another CPU
+            pthread_mutex_lock(&(svars->readyQLock));
 
-        p = qRemove(&(svars->readyQ), 0);
-        if (p == NULL){
-            printf("No process to schedule\n");
+            // Index 0 = head of the list = the process that has been waiting
+            // the longest (qInsert always appends to the tail, so the head is
+            // always the oldest arrival — that is the FIFO selection rule).
+            int x = qShortest(&(svars->readyQ));
+            p = qRemove(&(svars->readyQ), x);
 
+            if (p == NULL) {
+                // readyQ was empty — CPU stays idle this tick.
+                printf("No process to schedule\n");
+            } else {
+                printf("Scheduling PID %d\n", p->PID);
+            }
+
+            pthread_mutex_unlock(&(svars->readyQLock));
         }
-        pthread_mutex_unlock(&(svars->readyQLock));
 
         if(p != NULL){
-        if(p->burstRemaining > qShortestBR(&(svars->readyQ))){
-            p->requeued = true;
-            qInsert(&(svars->readyQ), p);
+            pthread_mutex_lock(&(svars->readyQLock));
+            if(p->burstRemaining > qShortestBR(&(svars->readyQ))){
+                p->requeued = true;
+                qInsert(&(svars->readyQ), p);
+                p = qRemove(&(svars->readyQ), qShortest(&(svars->readyQ)));
 
-        } else{
-            p->burstRemaining --;
-            if (p->burstRemaining == 0)
-            {
-               pthread_mutex_lock(&(svars->finishedQLock));
-                qInsert(&(svars->finishedQ), p);
-                pthread_mutex_unlock(&(svars->finishedQLock));
-                p = NULL;
-            }
+            } 
             
-        }
+            else{
+                p->burstRemaining --;
+                if (p->burstRemaining == 0)
+                {
+                    pthread_mutex_lock(&(svars->finishedQLock));
+                    qInsert(&(svars->finishedQ), p);
+                    pthread_mutex_unlock(&(svars->finishedQLock));
+                    p = NULL;
+                }
+                
+            }
+            pthread_mutex_unlock(&(svars->readyQLock));
         }
       sem_post(svars->mainSem);  
     }

@@ -242,7 +242,8 @@ void* RRcpu(void* param) {
                 p->requeued = true;
                 qInsert(&(svars->readyQ), p);
                 pthread_mutex_unlock(&(svars->readyQLock));
-                p = NULL;
+                p = qRemove(&(svars->readyQ), 0);
+                //p = NULL;
                 count = 0;
             } 
             else if((p->burstRemaining == 0)){
@@ -250,7 +251,8 @@ void* RRcpu(void* param) {
                 qInsert(&(svars->finishedQ), p);
                 pthread_mutex_unlock(&(svars->finishedQLock));
                 count == 0;
-                p = NULL;
+                p = qRemove(&(svars->readyQ), 0);
+                //p = NULL;
             }else{
                 count++;
             }

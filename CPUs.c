@@ -343,35 +343,44 @@ void* PPcpu(void* param) {
     while (1) {
         sem_wait(svars->cpuSems[threadNum]);
 
-        pthread_mutex_lock(&(svars->readyQLock));
+        
 
-        p = qRemove(&(svars->readyQ), 0);
+        if (p == NULL) {
+            pthread_mutex_lock(&(svars->readyQLock));
 
-        if (p == NULL){
+            int x = qPriority(&(svars->readyQ));
+            p = qRemove(&(svars->readyQ), x);
+    
             printf("No process to schedule\n");
-
-        }
-        pthread_mutex_unlock(&(svars->readyQLock));
-
-        if(p != NULL){
-        printf("Scheduling PID %d\n", p->PID);
-        pthread_mutex_lock(&(svars->readyQLock));
-        if(p->priority > qGetPriority(&(svars->readyQ))){
-            p->requeued = true;
-            qInsert(&(svars->readyQ), p);
-
-        } else{
-            p->burstRemaining --;
-            if (p->burstRemaining == 0)
-            {
-               pthread_mutex_lock(&(svars->finishedQLock));
-                qInsert(&(svars->finishedQ), p);
-                pthread_mutex_unlock(&(svars->finishedQLock));
-                p = NULL;
+             if (p == NULL) {
+                // readyQ was empty — CPU stays idle this tick.
+                printf("No process to schedule\n");
+            } else {
+                printf("Scheduling PID %d\n", p->PID);
             }
-            
+            pthread_mutex_unlock(&(svars->readyQLock));
         }
-        pthread_mutex_unlock(&(svars->readyQLock));
+    
+        if(p != NULL){
+            pthread_mutex_lock(&(svars->readyQLock));
+            if(p->priority > qGetPriority(&(svars->readyQ))){
+                p->requeued = true;
+                qInsert(&(svars->readyQ), p);
+                p = qRemove(&(svars->readyQ), qPriority(&(svars->readyQ)));
+
+
+            } else{
+                p->burstRemaining --;
+                if (p->burstRemaining == 0)
+                {
+                    pthread_mutex_lock(&(svars->finishedQLock));
+                    qInsert(&(svars->finishedQ), p);
+                    pthread_mutex_unlock(&(svars->finishedQLock));
+                    p = NULL;
+                }
+                
+            }
+            pthread_mutex_unlock(&(svars->readyQLock));
         }
        sem_post(svars->mainSem);
     }

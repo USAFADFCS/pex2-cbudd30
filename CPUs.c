@@ -212,8 +212,9 @@ void* RRcpu(void* param) {
     int threadNum = ((CpuParams*) param)->threadNumber;
     SharedVars* svars = ((CpuParams*) param)->svars;
 
-    Process* p = NULL;  // TODO: uncomment when you implement this function
+    Process* p = NULL; 
 
+    int count = 0;
 
     while (1) {
         sem_wait(svars->cpuSems[threadNum]);
@@ -230,40 +231,35 @@ void* RRcpu(void* param) {
                 printf("Scheduling PID %d\n", p->PID);
             }
             
-
             pthread_mutex_unlock(&(svars->readyQLock));
         }
 
         if (p != NULL) {
-            int count = 0;
-            while(count < (svars->quantum)){
-            if (p->burstRemaining != 0) {
-                // Process is done — move it to finishedQ so main can
-                // compute and print wait-time statistics at simulation end.
-                p->burstRemaining--;
+            p->burstRemaining--;
+            
+            if((count == (svars->quantum)) && (p->burstRemaining != 0)){
                 pthread_mutex_lock(&(svars->readyQLock));
                 p->requeued = true;
                 qInsert(&(svars->readyQ), p);
                 pthread_mutex_unlock(&(svars->readyQLock));
-                count ++;
-                
-            } else{
+                p = NULL;
+                count = 0;
+            } 
+            else if((p->burstRemaining == 0)){
                 pthread_mutex_lock(&(svars->finishedQLock));
                 qInsert(&(svars->finishedQ), p);
                 pthread_mutex_unlock(&(svars->finishedQLock));
-                break;
-
+                count == 0;
+                p = NULL;
+            }else{
+                count++;
             }
-            
-            }
-            p = NULL;
-            count =0;
-        
+        }
+         sem_post(svars->mainSem);
         }
 
-        sem_post(svars->mainSem);
+       
     }
-}
 
 
 // ============================================================

@@ -284,6 +284,16 @@ void* SRTFcpu(void* param) {
     while (1) {
         sem_wait(svars->cpuSems[threadNum]);
 
+        pthread_mutex_lock(&(svars->readyQLock));
+        if(p != NULL && p->burstRemaining > qShortestBR(&(svars->readyQ))){
+                p->requeued = true;
+                qInsert(&(svars->readyQ), p);
+
+                p = NULL;
+            
+        }
+        pthread_mutex_unlock(&(svars->readyQLock));
+
         if (p == NULL) {
             // Lock readyQ before inspecting or modifying it — another CPU
             pthread_mutex_lock(&(svars->readyQLock));
@@ -305,17 +315,8 @@ void* SRTFcpu(void* param) {
         }
 
         if(p != NULL){
-            pthread_mutex_lock(&(svars->readyQLock));
-            if(p->burstRemaining > qShortestBR(&(svars->readyQ))){
-                p->requeued = true;
-                qInsert(&(svars->readyQ), p);
-                p = qRemove(&(svars->readyQ), qShortest(&(svars->readyQ)));
-
-            } 
-            
-            else{
-                p->burstRemaining --;
-                if (p->burstRemaining == 0)
+            p->burstRemaining --;
+            if (p->burstRemaining == 0)
                 {
                     pthread_mutex_lock(&(svars->finishedQLock));
                     qInsert(&(svars->finishedQ), p);
@@ -324,11 +325,11 @@ void* SRTFcpu(void* param) {
                 }
                 
             }
-            pthread_mutex_unlock(&(svars->readyQLock));
+            sem_post(svars->mainSem);  
         }
-      sem_post(svars->mainSem);  
+      
     }
-}
+
 
 // ============================================================
 // PP — Preemptive Priority
@@ -341,20 +342,25 @@ void* PPcpu(void* param) {
 
     Process* p = NULL;  // TODO: uncomment when you implement this function
 
-    
-
     while (1) {
         sem_wait(svars->cpuSems[threadNum]);
 
-        
+        pthread_mutex_lock(&(svars->readyQLock));
+        if(p != NULL && p->priority > qGetPriority(&(svars->readyQ))){
+                p->requeued = true;
+                qInsert(&(svars->readyQ), p);
+                p = NULL;
+            
+        }
+        pthread_mutex_unlock(&(svars->readyQLock));
 
+        
         if (p == NULL) {
             pthread_mutex_lock(&(svars->readyQLock));
 
             int x = qPriority(&(svars->readyQ));
             p = qRemove(&(svars->readyQ), x);
     
-            printf("No process to schedule\n");
              if (p == NULL) {
                 // readyQ was empty — CPU stays idle this tick.
                 printf("No process to schedule\n");
@@ -365,16 +371,9 @@ void* PPcpu(void* param) {
         }
     
         if(p != NULL){
-            pthread_mutex_lock(&(svars->readyQLock));
-            if(p->priority > qGetPriority(&(svars->readyQ))){
-                p->requeued = true;
-                qInsert(&(svars->readyQ), p);
-                p = qRemove(&(svars->readyQ), qPriority(&(svars->readyQ)));
-
-
-            } else{
-                p->burstRemaining --;
-                if (p->burstRemaining == 0)
+            p->burstRemaining --;
+            
+            if (p->burstRemaining == 0)
                 {
                     pthread_mutex_lock(&(svars->finishedQLock));
                     qInsert(&(svars->finishedQ), p);
@@ -382,10 +381,10 @@ void* PPcpu(void* param) {
                     p = NULL;
                 }
                 
-            }
-            pthread_mutex_unlock(&(svars->readyQLock));
         }
-       sem_post(svars->mainSem);
-    }
-     
+        
+        sem_post(svars->mainSem);
+        }
+       
 }
+     

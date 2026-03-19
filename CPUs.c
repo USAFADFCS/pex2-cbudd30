@@ -214,13 +214,23 @@ void* RRcpu(void* param) {
 
     Process* p = NULL; 
 
-    int count = 0;
+    int count = svars->quantum;
 
     while (1) {
         sem_wait(svars->cpuSems[threadNum]);
+
+        if((p != NULL) && (count == 0)){
+                pthread_mutex_lock(&(svars->readyQLock));
+                p->requeued = true;
+                qInsert(&(svars->readyQ), p);
+                pthread_mutex_unlock(&(svars->readyQLock));
+
+                p = NULL;
+        }
         
         if (p == NULL) {
             // Lock readyQ before inspecting or modifying it — another CPU
+            
             pthread_mutex_lock(&(svars->readyQLock));
             p = qRemove(&(svars->readyQ), 0);
             
@@ -229,32 +239,27 @@ void* RRcpu(void* param) {
                 printf("No process to schedule\n");
             } else {
                 printf("Scheduling PID %d\n", p->PID);
+                count = svars->quantum;
+                
             }
             
+            
             pthread_mutex_unlock(&(svars->readyQLock));
-        }
+        } 
 
         if (p != NULL) {
             p->burstRemaining--;
-            
-            if((count == (svars->quantum)) && (p->burstRemaining != 0)){
-                pthread_mutex_lock(&(svars->readyQLock));
-                p->requeued = true;
-                qInsert(&(svars->readyQ), p);
-                pthread_mutex_unlock(&(svars->readyQLock));
-                p = qRemove(&(svars->readyQ), 0);
-                //p = NULL;
-                count = 0;
-            } 
-            else if((p->burstRemaining == 0)){
+            count --;
+
+            if (p->burstRemaining == 0) {
+                // Process is done — move it to finishedQ so main can
+                // compute and print wait-time statistics at simulation end.
                 pthread_mutex_lock(&(svars->finishedQLock));
                 qInsert(&(svars->finishedQ), p);
                 pthread_mutex_unlock(&(svars->finishedQLock));
-                count == 0;
-                p = qRemove(&(svars->readyQ), 0);
-                //p = NULL;
-            }else{
-                count++;
+
+                // CPU is now idle; it will select a new process next tick.
+                p = NULL;
             }
         }
          sem_post(svars->mainSem);

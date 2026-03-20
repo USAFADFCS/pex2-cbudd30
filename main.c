@@ -12,7 +12,9 @@
  *          Supports sequential (default) and parallel CPU signaling modes;
  *          see usage() for the full argument list and a description of each.
  * ===========================================================
- * Documentation Statement: <describe any help received>
+ * Documentation Statement: recieved feedback and guidance from Dr. Weingart & 
+ * C2C McBrayer and C1C Liu (in-class) looked over my code and gave tips in the right direction or pointed out differences in their code and mine
+ * 
  * ===========================================================
  * ======================================================================
  * Required Features Not Included:1

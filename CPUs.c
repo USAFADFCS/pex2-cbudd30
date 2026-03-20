@@ -14,7 +14,9 @@
  *          All accesses to readyQ and finishedQ are protected by their
  *          respective mutex locks.
  * ===========================================================
- * Documentation Statement: <describe any help received>
+ * Documentation Statement: recieved feedback and guidance from Dr. Weingart & 
+ * C2C McBrayer and C1C Liu (in-class) looked over my code and gave tips in the right direction or pointed out differences in their code and mine
+ * 
  * =========================================================== */
 
 #include <stdio.h>
@@ -116,9 +118,7 @@ void* SJFcpu(void* param) {
             // Lock readyQ before inspecting or modifying it — another CPU
             pthread_mutex_lock(&(svars->readyQLock));
 
-            // Index 0 = head of the list = the process that has been waiting
-            // the longest (qInsert always appends to the tail, so the head is
-            // always the oldest arrival — that is the FIFO selection rule).
+            //choses next process with shorest running time
             int x = qShortest(&(svars->readyQ));
             p = qRemove(&(svars->readyQ), x);
 
@@ -170,6 +170,7 @@ void* NPPcpu(void* param) {
             // Lock readyQ before inspecting or modifying it — another CPU
             pthread_mutex_lock(&(svars->readyQLock));
 
+            //choses next process with highest (lowest) priority
             int x = qPriority(&(svars->readyQ));
             p = qRemove(&(svars->readyQ), x);
 
@@ -219,6 +220,8 @@ void* RRcpu(void* param) {
     while (1) {
         sem_wait(svars->cpuSems[threadNum]);
 
+        //preemption: if quantum is reached and the process is not completed, requeue to end of readyQ
+
         if((p != NULL) && (count == 0)){
                 pthread_mutex_lock(&(svars->readyQLock));
                 p->requeued = true;
@@ -239,6 +242,7 @@ void* RRcpu(void* param) {
                 printf("No process to schedule\n");
             } else {
                 printf("Scheduling PID %d\n", p->PID);
+                //resets count to quantum value
                 count = svars->quantum;
                 
             }
@@ -285,6 +289,8 @@ void* SRTFcpu(void* param) {
         sem_wait(svars->cpuSems[threadNum]);
 
         pthread_mutex_lock(&(svars->readyQLock));
+        //preemption: if a new process has enter the readyQ with a shorter remaining runtime, it will replace the current process
+        //current process is requeued to readyQ
         if(p != NULL && p->burstRemaining > qShortestBR(&(svars->readyQ))){
                 p->requeued = true;
                 qInsert(&(svars->readyQ), p);
@@ -345,6 +351,8 @@ void* PPcpu(void* param) {
     while (1) {
         sem_wait(svars->cpuSems[threadNum]);
 
+        //premeption: if a new process has entered the readyQ with a higher (lower) priority, it will replace the current process
+        //current process is requeued to readyQ
         pthread_mutex_lock(&(svars->readyQLock));
         if(p != NULL && p->priority > qGetPriority(&(svars->readyQ))){
                 p->requeued = true;
